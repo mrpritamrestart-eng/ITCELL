@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 type Branch = {
   _id: string;
@@ -51,7 +51,7 @@ export default function BranchWiseMonthlyReportPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState("");
 
-  const fetchBranchWiseReport = async () => {
+  const fetchBranchWiseReport = useCallback(async () => {
     try {
       setIsLoading(true);
       setErrorMessage("");
@@ -83,11 +83,11 @@ export default function BranchWiseMonthlyReportPage() {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [selectedMonth, selectedBranches]);
 
   useEffect(() => {
-    fetchBranchWiseReport();
-  }, [selectedMonth, selectedBranches]);
+    void fetchBranchWiseReport();
+  }, [fetchBranchWiseReport]);
 
   const filteredBranches = useMemo(() => {
     return branches.filter((branch) =>

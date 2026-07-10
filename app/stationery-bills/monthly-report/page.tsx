@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 type StationeryItem = {
   _id: string;
@@ -21,12 +21,6 @@ type ReportRow = {
   total: number;
 };
 
-type ItemTotal = {
-  itemId: string;
-  itemName: string;
-  total: number;
-};
-
 function getCurrentMonthValue() {
   const today = new Date();
   const year = today.getFullYear();
@@ -41,16 +35,13 @@ export default function MonthlyBranchReportPage() {
 
   const [stationeryItems, setStationeryItems] = useState<StationeryItem[]>([]);
   const [rows, setRows] = useState<ReportRow[]>([]);
-  const [itemTotals, setItemTotals] = useState<ItemTotal[]>([]);
-  const [grandTotal, setGrandTotal] = useState(0);
-
   const [periodStart, setPeriodStart] = useState("");
   const [periodEnd, setPeriodEnd] = useState("");
 
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState("");
 
-  const fetchMonthlyReport = async () => {
+  const fetchMonthlyReport = useCallback(async () => {
     try {
       setIsLoading(true);
       setErrorMessage("");
@@ -67,8 +58,6 @@ export default function MonthlyBranchReportPage() {
 
       setStationeryItems(data.stationeryItems || []);
       setRows(data.rows || []);
-      setItemTotals(data.itemTotals || []);
-      setGrandTotal(data.grandTotal || 0);
       setPeriodStart(data.period?.start || "");
       setPeriodEnd(data.period?.end || "");
     } catch (error) {
@@ -80,11 +69,11 @@ export default function MonthlyBranchReportPage() {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [selectedMonth]);
 
   useEffect(() => {
-    fetchMonthlyReport();
-  }, [selectedMonth]);
+    void fetchMonthlyReport();
+  }, [fetchMonthlyReport]);
 
   const filteredRows = useMemo(() => {
     return rows.filter((row) =>

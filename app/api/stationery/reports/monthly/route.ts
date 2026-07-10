@@ -1,3 +1,4 @@
+import mongoose from "mongoose";
 import { NextResponse } from "next/server";
 import { connectDB } from "@/lib/mongodb";
 import Branch from "@/models/Branch";
@@ -6,6 +7,17 @@ import OutEntry from "@/models/OutEntry";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+type LeanBranch = {
+  _id: mongoose.Types.ObjectId;
+  name: string;
+};
+
+type LeanStationeryItem = {
+  _id: mongoose.Types.ObjectId;
+  name: string;
+  unit: string;
+};
 
 function getCurrentMonthValue() {
   const today = new Date();
@@ -46,13 +58,13 @@ export async function GET(request: Request) {
     const reportEndDate = new Date(endDate);
     reportEndDate.setDate(reportEndDate.getDate() - 1);
 
-    const branches = await Branch.find({ isActive: true })
+    const branches = (await Branch.find({ isActive: true })
       .sort({ name: 1 })
-      .lean();
+      .lean()) as LeanBranch[];
 
-    const stationeryItems = await StationeryItem.find({ isActive: true })
+    const stationeryItems = (await StationeryItem.find({ isActive: true })
       .sort({ name: 1 })
-      .lean();
+      .lean()) as LeanStationeryItem[];
 
     const reportData = await OutEntry.aggregate([
       {
@@ -86,8 +98,8 @@ export async function GET(request: Request) {
       quantityMap.set(key, entry.quantity || 0);
     });
 
-    const rows = branches.map((branch: any) => {
-      const itemQuantities = stationeryItems.map((item: any) => {
+    const rows = branches.map((branch) => {
+      const itemQuantities = stationeryItems.map((item) => {
         const key = `${String(branch._id)}-${String(item._id)}`;
         const quantity = quantityMap.get(key) || 0;
 
@@ -111,7 +123,7 @@ export async function GET(request: Request) {
       };
     });
 
-    const itemTotals = stationeryItems.map((item: any) => {
+    const itemTotals = stationeryItems.map((item) => {
       const total = rows.reduce((sum, row) => {
         const foundItem = row.itemQuantities.find(
           (rowItem) => rowItem.itemId === String(item._id)

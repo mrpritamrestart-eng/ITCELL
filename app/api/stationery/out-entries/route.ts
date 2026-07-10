@@ -14,6 +14,23 @@ type OutRequestItem = {
   quantity: number;
 };
 
+type LeanBranch = {
+  _id: mongoose.Types.ObjectId;
+  name: string;
+};
+
+type LeanStationeryItem = {
+  _id: mongoose.Types.ObjectId;
+  name: string;
+  unit: string;
+};
+
+type StockAggregateRow = {
+  _id: mongoose.Types.ObjectId;
+  totalIn?: number;
+  totalOut?: number;
+};
+
 function parseLocalDate(dateString: string) {
   return new Date(`${dateString}T00:00:00`);
 }
@@ -104,10 +121,10 @@ export async function POST(request: Request) {
       }
     }
 
-    const branch = await Branch.findOne({
+    const branch = (await Branch.findOne({
       _id: branchId,
       isActive: true,
-    }).lean();
+    }).lean()) as LeanBranch | null;
 
     if (!branch) {
       return NextResponse.json(
@@ -135,10 +152,10 @@ export async function POST(request: Request) {
 
     const itemIds = combinedItems.map((item) => item.itemId);
 
-    const dbItems = await StationeryItem.find({
+    const dbItems = (await StationeryItem.find({
       _id: { $in: itemIds },
       isActive: true,
-    }).lean();
+    }).lean()) as LeanStationeryItem[];
 
     if (dbItems.length !== itemIds.length) {
       return NextResponse.json(
@@ -151,14 +168,14 @@ export async function POST(request: Request) {
     }
 
     const itemMap = new Map(
-      dbItems.map((item: any) => [String(item._id), item])
+      dbItems.map((item) => [String(item._id), item])
     );
 
     const objectItemIds = itemIds.map(
       (itemId) => new mongoose.Types.ObjectId(itemId)
     );
 
-    const stockData = await StockTransaction.aggregate([
+    const stockData = await StockTransaction.aggregate<StockAggregateRow>([
       {
         $match: {
           item: { $in: objectItemIds },
@@ -185,7 +202,11 @@ export async function POST(request: Request) {
     );
 
     for (const item of combinedItems) {
-      const dbItem: any = itemMap.get(item.itemId);
+      const dbItem = itemMap.get(item.itemId);
+
+      if (!dbItem) {
+        throw new Error("Invalid stationery item");
+      }
       const stock = stockMap.get(item.itemId) || {
         totalIn: 0,
         totalOut: 0,
@@ -204,7 +225,11 @@ export async function POST(request: Request) {
     }
 
     const outItems = combinedItems.map((item) => {
-      const dbItem: any = itemMap.get(item.itemId);
+      const dbItem = itemMap.get(item.itemId);
+
+      if (!dbItem) {
+        throw new Error("Invalid stationery item");
+      }
 
       return {
         item: item.itemId,
@@ -225,7 +250,7 @@ export async function POST(request: Request) {
       [
         {
           branch: branchId,
-          branchName: (branch as any).name,
+          branchName: branch.name,
           issueDate: parseLocalDate(issueDate),
           receiverName: String(receiverName).trim(),
           items: outItems,
@@ -247,7 +272,7 @@ export async function POST(request: Request) {
       quantityOut: item.quantity,
       transactionDate: parseLocalDate(issueDate),
       branch: branchId,
-      branchName: (branch as any).name,
+      branchName: branch.name,
       referenceModel: "OutEntry",
       referenceId: outEntry._id,
       remarks: String(remarks).trim(),

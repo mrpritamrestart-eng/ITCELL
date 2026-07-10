@@ -19,7 +19,7 @@ const stockTransactionSchema = new Schema(
     },
     transactionType: {
       type: String,
-      enum: ["PURCHASE_IN", "BRANCH_OUT"],
+      enum: ["OPENING_STOCK", "PURCHASE_IN", "BRANCH_OUT"],
       required: true,
     },
     quantityIn: {
@@ -46,12 +46,11 @@ const stockTransactionSchema = new Schema(
     },
     referenceModel: {
       type: String,
-      enum: ["PurchaseEntry", "OutEntry"],
+      enum: ["OpeningStock", "PurchaseEntry", "OutEntry"],
       required: true,
     },
     referenceId: {
       type: Schema.Types.ObjectId,
-      required: true,
     },
     remarks: {
       type: String,

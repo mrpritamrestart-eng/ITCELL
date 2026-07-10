@@ -8,6 +8,17 @@ import OutEntry from "@/models/OutEntry";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+type LeanBranch = {
+  _id: mongoose.Types.ObjectId;
+  name: string;
+};
+
+type LeanStationeryItem = {
+  _id: mongoose.Types.ObjectId;
+  name: string;
+  unit: string;
+};
+
 function getCurrentMonthValue() {
   const today = new Date();
   const year = today.getFullYear();
@@ -55,13 +66,13 @@ export async function GET(request: Request) {
     const reportEndDate = new Date(endDate);
     reportEndDate.setDate(reportEndDate.getDate() - 1);
 
-    const branches = await Branch.find({ isActive: true })
+    const branches = (await Branch.find({ isActive: true })
       .sort({ name: 1 })
-      .lean();
+      .lean()) as LeanBranch[];
 
-    const stationeryItems = await StationeryItem.find({ isActive: true })
+    const stationeryItems = (await StationeryItem.find({ isActive: true })
       .sort({ name: 1 })
-      .lean();
+      .lean()) as LeanStationeryItem[];
 
     if (branchIds.length === 0) {
       return NextResponse.json({
@@ -92,7 +103,7 @@ export async function GET(request: Request) {
       );
     }
 
-    const selectedBranches = branches.filter((branch: any) =>
+    const selectedBranches = branches.filter((branch) =>
       validBranchIds.includes(String(branch._id))
     );
 
@@ -133,9 +144,9 @@ export async function GET(request: Request) {
       quantityMap.set(key, entry.quantity || 0);
     });
 
-    const branchWiseDetails = selectedBranches.map((branch: any) => {
+    const branchWiseDetails = selectedBranches.map((branch) => {
       const items = stationeryItems
-        .map((item: any) => {
+        .map((item) => {
           const key = `${String(branch._id)}-${String(item._id)}`;
           const quantity = quantityMap.get(key) || 0;
 
@@ -161,8 +172,8 @@ export async function GET(request: Request) {
     });
 
     const combinedSummary = stationeryItems
-      .map((item: any) => {
-        const quantity = selectedBranches.reduce((sum, branch: any) => {
+      .map((item) => {
+        const quantity = selectedBranches.reduce((sum, branch) => {
           const key = `${String(branch._id)}-${String(item._id)}`;
           return sum + (quantityMap.get(key) || 0);
         }, 0);

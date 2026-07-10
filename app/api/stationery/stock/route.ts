@@ -1,3 +1,4 @@
+import mongoose from "mongoose";
 import { NextResponse } from "next/server";
 import { connectDB } from "@/lib/mongodb";
 import StationeryItem from "@/models/StationeryItem";
@@ -6,15 +7,28 @@ import StockTransaction from "@/models/StockTransaction";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+type LeanStationeryItem = {
+  _id: mongoose.Types.ObjectId;
+  name: string;
+  unit: string;
+  minimumRequired?: number;
+};
+
+type StockAggregateRow = {
+  _id: mongoose.Types.ObjectId;
+  totalIn?: number;
+  totalOut?: number;
+};
+
 export async function GET() {
   try {
     await connectDB();
 
-    const items = await StationeryItem.find({ isActive: true })
+    const items = (await StationeryItem.find({ isActive: true })
       .sort({ name: 1 })
-      .lean();
+      .lean()) as LeanStationeryItem[];
 
-    const stockTransactions = await StockTransaction.aggregate([
+    const stockTransactions = await StockTransaction.aggregate<StockAggregateRow>([
       {
         $group: {
           _id: "$item",
@@ -31,7 +45,7 @@ export async function GET() {
       ])
     );
 
-    const stock = items.map((item: any) => {
+    const stock = items.map((item) => {
       const transaction = stockMap.get(String(item._id));
 
       const totalIn = transaction?.totalIn || 0;

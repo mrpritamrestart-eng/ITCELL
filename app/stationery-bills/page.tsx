@@ -31,6 +31,14 @@ const modules = [
     href: "/stationery-bills/branch-wise-report",
     icon: "🏢",
   },
+  {
+    title: "Permission and Comparative Quotations",
+    description:
+      "Branch permissions, bill amount calculations aur comparative quotation PDF.",
+    href: "/stationery-bills/permission-comparative",
+    icon: "📑",
+    placement: "bottom-right",
+  },
 ];
 
 export default function StationeryBillsPage() {
@@ -90,7 +98,11 @@ export default function StationeryBillsPage() {
             <Link
               key={module.title}
               href={module.href}
-              className="group flex min-h-[230px] flex-col justify-between rounded-2xl border border-gray-200 bg-white p-6 shadow-sm transition-all duration-300 hover:-translate-y-1 hover:border-blue-500 hover:shadow-xl"
+              className={`group flex min-h-[230px] flex-col justify-between rounded-2xl border border-gray-200 bg-white p-6 shadow-sm transition-all duration-300 hover:-translate-y-1 hover:border-blue-500 hover:shadow-xl ${
+                "placement" in module && module.placement === "bottom-right"
+                  ? "xl:col-start-5"
+                  : ""
+              }`}
             >
               <div>
                 <div className="mb-5 flex h-16 w-16 items-center justify-center rounded-2xl bg-blue-100 text-4xl transition-all duration-300 group-hover:bg-blue-600 group-hover:scale-105">

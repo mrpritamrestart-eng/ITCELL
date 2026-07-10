@@ -9,9 +9,17 @@ const adminModules = [
   },
   {
     title: "Name of Stationery Items",
-    description: "Stationery items, units aur minimum stock manage karne ke liye.",
+    description:
+      "Stationery items, units aur minimum stock manage karne ke liye.",
     href: "/admin/stationery/items",
     icon: "📦",
+  },
+  {
+    title: "Opening Stock Entry",
+    description:
+      "Already available stationery stock ko first time add/update karne ke liye.",
+    href: "/admin/stationery/opening-stock",
+    icon: "📥",
   },
 ];
 
@@ -26,7 +34,7 @@ export default function AdminDashboardPage() {
           </p>
         </div>
 
-        <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
+        <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
           {adminModules.map((module) => (
             <Link
               key={module.title}
