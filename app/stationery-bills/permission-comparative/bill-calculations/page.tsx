@@ -61,6 +61,7 @@ type Calculation = {
   }>;
 
   acceptedFirmIndex: number;
+  status?: "ACTIVE" | "VOID";
 };
 
 type ApiResponse = {
@@ -771,6 +772,27 @@ export default function BillCalculationsPage() {
     });
   }
 
+
+  async function cancelCalculation(calculation: Calculation) {
+    const reason = window.prompt(`Invoice ${calculation.invoiceNo} cancel karne ka reason likhein:`);
+    if (!reason) return;
+    setMessage("");
+    try {
+      const response = await fetch("/api/stationery/quotation-calculations", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: calculation._id, action: "void", reason }),
+      });
+      const data = (await response.json()) as ApiResponse;
+      if (!response.ok || !data.success) throw new Error(data.message || "Calculation cancel nahi hui");
+      setMessage(data.message || "Calculation cancelled");
+      setCalculations((current) => current.filter((entry) => entry._id !== calculation._id));
+      if (editingId === calculation._id) resetForm();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Calculation cancel nahi hui");
+    }
+  }
+
   async function saveCalculation() {
     setIsSaving(true);
     setMessage("");
@@ -1077,35 +1099,23 @@ export default function BillCalculationsPage() {
                   ) : (
                     calculations.map(
                       (calculation) => (
-                        <button
-                          key={
-                            calculation._id
-                          }
-                          type="button"
-                          onClick={() =>
-                            loadCalculation(
-                              calculation
-                            )
-                          }
-                          className={`w-full rounded-xl border p-4 text-left hover:border-blue-400 hover:bg-blue-50 ${
-                            editingId ===
-                            calculation._id
-                              ? "border-blue-500 bg-blue-50"
-                              : "border-gray-200 bg-white"
-                          }`}
-                        >
-                          <span className="block text-sm font-black text-gray-900">
-                            {
-                              calculation.invoiceNo
-                            }
-                          </span>
-
-                          <span className="mt-1 block text-xs text-gray-500">
-                            {calculation.selectedPermissionNames.join(
-                              ", "
-                            )}
-                          </span>
-                        </button>
+                        <div key={calculation._id} className={`rounded-xl border p-3 ${editingId === calculation._id ? "border-blue-500 bg-blue-50" : "border-gray-200 bg-white"}`}>
+                          <button
+                            type="button"
+                            onClick={() => loadCalculation(calculation)}
+                            className="w-full text-left"
+                          >
+                            <span className="block text-sm font-black text-gray-900">{calculation.invoiceNo}</span>
+                            <span className="mt-1 block text-xs text-gray-500">{calculation.selectedPermissionNames.join(", ")}</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => void cancelCalculation(calculation)}
+                            className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-xs font-black text-red-700 hover:bg-red-100"
+                          >
+                            Cancel Saved Calculation
+                          </button>
+                        </div>
                       )
                     )
                   )}

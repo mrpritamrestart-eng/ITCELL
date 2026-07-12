@@ -34,7 +34,8 @@ export default function AdminLoginPage() {
         throw new Error(data.message || "Login failed");
       }
 
-      router.push("/admin");
+      const requestedPath = new URLSearchParams(window.location.search).get("next");
+      router.push(requestedPath?.startsWith("/") ? requestedPath : "/admin");
       router.refresh();
     } catch (error) {
       setErrorMessage(

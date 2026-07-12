@@ -1,3 +1,4 @@
+import { requireRouteAuth } from "@/lib/route-auth";
 import mongoose from "mongoose";
 import { NextResponse } from "next/server";
 
@@ -28,6 +29,8 @@ function validateFirmName(name: string) {
 }
 
 export async function GET() {
+  const auth = await requireRouteAuth();
+  if (auth.response) return auth.response;
   try {
     await connectDB();
 
@@ -63,6 +66,8 @@ export async function GET() {
 export async function POST(
   request: Request
 ) {
+  const auth = await requireRouteAuth();
+  if (auth.response) return auth.response;
   try {
     await connectDB();
 
@@ -158,6 +163,8 @@ export async function POST(
 export async function PATCH(
   request: Request
 ) {
+  const auth = await requireRouteAuth();
+  if (auth.response) return auth.response;
   try {
     await connectDB();
 

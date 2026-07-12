@@ -102,9 +102,37 @@ const permissionBatchSchema = new Schema(
       default: [],
     },
 
+    status: {
+      type: String,
+      enum: ["DRAFT", "FINALIZED"],
+      default: "FINALIZED",
+      index: true,
+    },
+
+    revision: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+
     finalizedAt: {
       type: Date,
       default: null,
+    },
+
+    finalizedBy: {
+      type: String,
+      trim: true,
+    },
+
+    unlockedAt: {
+      type: Date,
+      default: null,
+    },
+
+    unlockedBy: {
+      type: String,
+      trim: true,
     },
   },
   {

@@ -58,6 +58,9 @@ type SourceDocument = {
 
 type SavedBatch = {
   month: string;
+  status?: "DRAFT" | "FINALIZED";
+  revision?: number;
+  finalizedAt?: string | null;
   documents: Array<{
     _id: string;
     sourceType?:
@@ -293,6 +296,10 @@ export default function PermissionsPage() {
     setHasSavedData,
   ] = useState(false);
 
+  const [batchStatus, setBatchStatus] = useState<"DRAFT" | "FINALIZED" | "NONE">("NONE");
+  const [revision, setRevision] = useState(0);
+  const [isUnlocking, setIsUnlocking] = useState(false);
+
   /*
    * Dummy Bill modal states
    */
@@ -407,6 +414,8 @@ export default function PermissionsPage() {
             setHasSavedData(
               true
             );
+            setBatchStatus(data.batch.status || (data.batch.finalizedAt ? "FINALIZED" : "DRAFT"));
+            setRevision(Number(data.batch.revision || 1));
 
             setMessage(
               "Is month ka saved permission data load ho gaya."
@@ -416,10 +425,14 @@ export default function PermissionsPage() {
             setHasSavedData(
               false
             );
+            setBatchStatus("NONE");
+            setRevision(0);
           }
         } catch (error) {
           setDocuments([]);
           setHasSavedData(false);
+          setBatchStatus("NONE");
+          setRevision(0);
 
           setMessage(
             error instanceof Error
@@ -1112,6 +1125,31 @@ export default function PermissionsPage() {
     }
   }
 
+
+  async function unlockPermissions() {
+    const reason = window.prompt("Permission unlock/correction ka reason likhein:");
+    if (!reason) return;
+    setIsUnlocking(true);
+    setMessage("");
+    try {
+      const response = await fetch("/api/stationery/permissions", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ month, action: "unlock", reason }),
+      });
+      const data = (await response.json()) as ApiResponse;
+      if (!response.ok || !data.success) throw new Error(data.message || "Unlock failed");
+      setMessage(data.message || "Permissions unlock ho gayi");
+      setBatchStatus("DRAFT");
+      setHasSavedData(false);
+      await loadSavedData(month);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Permission unlock nahi ho payi");
+    } finally {
+      setIsUnlocking(false);
+    }
+  }
+
   return (
     <main className="min-h-screen bg-gray-100 px-4 py-8 sm:px-6">
       <div className="mx-auto max-w-7xl">
@@ -1180,6 +1218,17 @@ export default function PermissionsPage() {
             >
               Generate Dummy Bills
             </button>
+
+            <a
+              href={`/api/stationery/permission-pdf?month=${month}`}
+              className={`self-end rounded-xl px-5 py-3 text-sm font-black shadow-sm ${
+                batchStatus === "FINALIZED" && documents.length > 0
+                  ? "bg-green-600 text-white hover:bg-green-700"
+                  : "pointer-events-none bg-gray-200 text-gray-500"
+              }`}
+            >
+              Download Permission PDF
+            </a>
           </div>
         </div>
 
@@ -1236,9 +1285,11 @@ export default function PermissionsPage() {
                   : "text-amber-700"
               }`}
             >
-              {hasSavedData
-                ? "Saved Final Data"
-                : "Unsaved Data"}
+              {batchStatus === "FINALIZED"
+                ? `Finalized (Rev. ${revision})`
+                : batchStatus === "DRAFT"
+                  ? `Draft / Unlocked (Rev. ${revision})`
+                  : "Unsaved Data"}
             </p>
           </div>
         </div>
@@ -1538,7 +1589,17 @@ export default function PermissionsPage() {
               )
             )}
 
-            <div className="sticky bottom-4 flex justify-end">
+            <div className="sticky bottom-4 flex flex-wrap justify-end gap-3">
+              {batchStatus === "FINALIZED" && (
+                <button
+                  type="button"
+                  onClick={() => void unlockPermissions()}
+                  disabled={isUnlocking}
+                  className="rounded-xl border border-orange-500 bg-white px-6 py-4 text-base font-black text-orange-700 shadow-lg hover:bg-orange-50 disabled:opacity-50"
+                >
+                  {isUnlocking ? "Unlocking..." : "Unlock for Correction"}
+                </button>
+              )}
               <button
                 type="button"
                 onClick={() =>

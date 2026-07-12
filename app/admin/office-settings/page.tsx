@@ -1,0 +1,20 @@
+"use client";
+
+import Link from "next/link";
+import { useEffect, useState } from "react";
+
+type Settings = { officeName: string; districtName: string; surveyTitle: string; committeeParagraph: string; presidentLabel: string; memberOneLabel: string; memberTwoLabel: string; stockRegisterPage: string };
+const empty: Settings = { officeName: "", districtName: "", surveyTitle: "", committeeParagraph: "", presidentLabel: "President", memberOneLabel: "Member", memberTwoLabel: "Member", stockRegisterPage: "" };
+
+export default function OfficeSettingsPage() {
+  const [settings, setSettings] = useState<Settings>(empty);
+  const [message, setMessage] = useState("");
+  const [saving, setSaving] = useState(false);
+  useEffect(() => { void fetch("/api/admin/office-settings").then((r) => r.json()).then((data) => data.success ? setSettings(data.settings) : setMessage(data.message)); }, []);
+  function update(field: keyof Settings, value: string) { setSettings((current) => ({ ...current, [field]: value })); }
+  async function save() { setSaving(true); setMessage(""); try { const response = await fetch("/api/admin/office-settings", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(settings) }); const data = await response.json(); if (!response.ok || !data.success) throw new Error(data.message || "Save failed"); setMessage(data.message); } catch (error) { setMessage(error instanceof Error ? error.message : "Save failed"); } finally { setSaving(false); } }
+  return <main className="min-h-screen bg-gray-100 px-4 py-8 sm:px-6"><div className="mx-auto max-w-5xl"><Link href="/admin" className="text-sm font-bold text-blue-700">← Back to Admin</Link><h1 className="mt-2 text-3xl font-black">Office & PDF Settings</h1><p className="mt-2 text-gray-600">Comparative quotation और committee survey PDF में इस्तेमाल होने वाली official details.</p>
+    {message && <div className="my-5 rounded-xl border border-blue-200 bg-blue-50 p-4 font-semibold text-blue-900">{message}</div>}
+    <div className="mt-6 grid gap-5 rounded-2xl bg-white p-6 shadow-sm md:grid-cols-2"><label className="font-bold">Office Name<input value={settings.officeName} onChange={(e) => update("officeName", e.target.value)} className="mt-2 w-full rounded-xl border px-4 py-3 font-normal"/></label><label className="font-bold">District Name<input value={settings.districtName} onChange={(e) => update("districtName", e.target.value)} className="mt-2 w-full rounded-xl border px-4 py-3 font-normal"/></label><label className="font-bold md:col-span-2">Survey Title<input value={settings.surveyTitle} onChange={(e) => update("surveyTitle", e.target.value)} className="mt-2 w-full rounded-xl border px-4 py-3 font-normal"/></label><label className="font-bold md:col-span-2">Committee Paragraph<textarea rows={5} value={settings.committeeParagraph} onChange={(e) => update("committeeParagraph", e.target.value)} className="mt-2 w-full rounded-xl border px-4 py-3 font-normal"/></label><label className="font-bold">President/Chairperson Label<input value={settings.presidentLabel} onChange={(e) => update("presidentLabel", e.target.value)} className="mt-2 w-full rounded-xl border px-4 py-3 font-normal"/></label><label className="font-bold">Member 1 Label<input value={settings.memberOneLabel} onChange={(e) => update("memberOneLabel", e.target.value)} className="mt-2 w-full rounded-xl border px-4 py-3 font-normal"/></label><label className="font-bold">Member 2 Label<input value={settings.memberTwoLabel} onChange={(e) => update("memberTwoLabel", e.target.value)} className="mt-2 w-full rounded-xl border px-4 py-3 font-normal"/></label><label className="font-bold">Stock Register Page No.<input value={settings.stockRegisterPage} onChange={(e) => update("stockRegisterPage", e.target.value)} className="mt-2 w-full rounded-xl border px-4 py-3 font-normal"/></label><div className="md:col-span-2 flex justify-end"><button disabled={saving} onClick={() => void save()} className="rounded-xl bg-blue-600 px-6 py-3 font-bold text-white disabled:opacity-50">{saving ? "Saving..." : "Save Settings"}</button></div></div>
+  </div></main>;
+}

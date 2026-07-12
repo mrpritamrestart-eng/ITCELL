@@ -1,9 +1,11 @@
+import { requireRouteAuth } from "@/lib/route-auth";
 import mongoose from "mongoose";
 import { NextResponse } from "next/server";
 import { connectDB } from "@/lib/mongodb";
 import Firm from "@/models/Firm";
 import PermissionBatch from "@/models/PermissionBatch";
 import QuotationCalculation from "@/models/QuotationCalculation";
+import { writeAuditLog } from "@/lib/audit";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -43,6 +45,8 @@ function itemKey(itemName: string, unit: string) {
 }
 
 export async function GET(request: Request) {
+  const auth = await requireRouteAuth();
+  if (auth.response) return auth.response;
   try {
     await connectDB();
     const { searchParams } = new URL(request.url);
@@ -68,7 +72,7 @@ export async function GET(request: Request) {
       return NextResponse.json({ success: true, calculation });
     }
 
-    const filter: { month?: string } = {};
+    const filter: { month?: string; status?: { $ne: string } } = { status: { $ne: "VOID" } };
     if (month) {
       if (!isValidMonth(month)) {
         return NextResponse.json(
@@ -99,6 +103,8 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
+  const auth = await requireRouteAuth();
+  if (auth.response) return auth.response;
   try {
     await connectDB();
     const body = await request.json();
@@ -120,6 +126,7 @@ export async function POST(request: Request) {
       : [];
     const firstFirmAmount = Number(body.firstFirmAmount);
     const acceptedFirmIndex = Number(body.acceptedFirmIndex);
+    const acceptedReason = String(body.acceptedReason || "Approved quotation").trim();
     const incomingPrices = Array.isArray(body.items)
       ? (body.items as IncomingPrice[])
       : [];
@@ -203,6 +210,13 @@ export async function POST(request: Request) {
     if (!permissionBatch) {
       return NextResponse.json(
         { success: false, message: "Is month ka saved permission data nahi mila" },
+        { status: 400 }
+      );
+    }
+
+    if (!permissionBatch.finalizedAt) {
+      return NextResponse.json(
+        { success: false, message: "Permission batch unlocked/draft hai. Pehle Final Permissions save karein." },
         { status: 400 }
       );
     }
@@ -324,6 +338,10 @@ export async function POST(request: Request) {
       items,
       firms: quotationFirms,
       acceptedFirmIndex,
+      acceptedReason,
+      status: "ACTIVE",
+      updatedBy: auth.session?.username || "admin",
+      ...(id ? {} : { createdBy: auth.session?.username || "admin" }),
     };
 
     const calculation = id
@@ -339,6 +357,15 @@ export async function POST(request: Request) {
         { status: 404 }
       );
     }
+
+    await writeAuditLog({
+      action: id ? "UPDATE" : "CREATE",
+      entityType: "QuotationCalculation",
+      entityId: String(calculation._id),
+      performedBy: auth.session?.username || "admin",
+      summary: `${invoiceNo} quotation calculation ${id ? "updated" : "created"}`,
+      metadata: { month, acceptedFirmIndex },
+    });
 
     return NextResponse.json({
       success: true,
@@ -359,5 +386,33 @@ export async function POST(request: Request) {
       { success: false, message },
       { status: isValidation ? 400 : 500 }
     );
+  }
+}
+
+
+export async function PATCH(request: Request) {
+  const auth = await requireRouteAuth();
+  if (auth.response) return auth.response;
+  try {
+    await connectDB();
+    const body = await request.json();
+    const id = String(body.id || "");
+    const reason = String(body.reason || "").trim();
+    if (body.action !== "void" || !mongoose.Types.ObjectId.isValid(id)) {
+      return NextResponse.json({ success: false, message: "Invalid action/calculation" }, { status: 400 });
+    }
+    if (reason.length < 5) {
+      return NextResponse.json({ success: false, message: "Cancellation reason kam se kam 5 characters ka hona chahiye" }, { status: 400 });
+    }
+    const calculation = await QuotationCalculation.findOneAndUpdate(
+      { _id: id, status: { $ne: "VOID" } },
+      { $set: { status: "VOID", voidedAt: new Date(), voidedBy: auth.session?.username || "admin", voidReason: reason } },
+      { new: true }
+    );
+    if (!calculation) return NextResponse.json({ success: false, message: "Calculation not found or already cancelled" }, { status: 404 });
+    await writeAuditLog({ action: "VOID", entityType: "QuotationCalculation", entityId: id, performedBy: auth.session?.username || "admin", summary: `${calculation.invoiceNo} calculation cancelled`, metadata: { reason } });
+    return NextResponse.json({ success: true, message: "Saved calculation cancelled successfully" });
+  } catch (error) {
+    return NextResponse.json({ success: false, message: error instanceof Error ? error.message : "Calculation cancel nahi hui" }, { status: 500 });
   }
 }

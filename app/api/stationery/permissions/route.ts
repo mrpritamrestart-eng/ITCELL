@@ -1,3 +1,4 @@
+import { requireRouteAuth } from "@/lib/route-auth";
 import mongoose from "mongoose";
 import { NextResponse } from "next/server";
 
@@ -5,6 +6,7 @@ import { connectDB } from "@/lib/mongodb";
 import Branch from "@/models/Branch";
 import PermissionBatch from "@/models/PermissionBatch";
 import StationeryItem from "@/models/StationeryItem";
+import { writeAuditLog } from "@/lib/audit";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -64,6 +66,8 @@ function normalizeSourceType(
 export async function GET(
   request: Request
 ) {
+  const auth = await requireRouteAuth();
+  if (auth.response) return auth.response;
   try {
     await connectDB();
 
@@ -116,6 +120,8 @@ export async function GET(
 export async function POST(
   request: Request
 ) {
+  const auth = await requireRouteAuth();
+  if (auth.response) return auth.response;
   try {
     await connectDB();
 
@@ -473,10 +479,16 @@ export async function POST(
           month,
         },
         {
-          month,
-          documents,
-          finalizedAt:
-            new Date(),
+          $set: {
+            month,
+            documents,
+            status: "FINALIZED",
+            finalizedAt: new Date(),
+            finalizedBy: auth.session?.username || "admin",
+            unlockedAt: null,
+            unlockedBy: "",
+          },
+          $inc: { revision: 1 },
         },
         {
           new: true,
@@ -486,10 +498,18 @@ export async function POST(
         }
       );
 
+    await writeAuditLog({
+      action: "FINALIZE",
+      entityType: "PermissionBatch",
+      entityId: String(batch?._id || ""),
+      performedBy: auth.session?.username || "admin",
+      summary: `${month} permissions finalized (revision ${batch?.revision || 1})`,
+      metadata: { documentCount: documents.length },
+    });
+
     return NextResponse.json({
       success: true,
-      message:
-        "Permission data successfully save ho gaya",
+      message: "Permission data successfully finalize ho gaya",
       batch,
     });
   } catch (error) {
@@ -514,5 +534,35 @@ export async function POST(
           : 500,
       }
     );
+  }
+}
+
+export async function PATCH(request: Request) {
+  const auth = await requireRouteAuth();
+  if (auth.response) return auth.response;
+  try {
+    await connectDB();
+    const body = await request.json();
+    const month = String(body.month || "");
+    if (!isValidMonth(month)) {
+      return NextResponse.json({ success: false, message: "Valid month select karo" }, { status: 400 });
+    }
+    if (body.action !== "unlock") {
+      return NextResponse.json({ success: false, message: "Unsupported action" }, { status: 400 });
+    }
+    const reason = String(body.reason || "").trim();
+    if (reason.length < 5) {
+      return NextResponse.json({ success: false, message: "Unlock reason kam se kam 5 characters ka hona chahiye" }, { status: 400 });
+    }
+    const batch = await PermissionBatch.findOneAndUpdate(
+      { month },
+      { $set: { status: "DRAFT", finalizedAt: null, unlockedAt: new Date(), unlockedBy: auth.session?.username || "admin" } },
+      { new: true }
+    );
+    if (!batch) return NextResponse.json({ success: false, message: "Permission batch nahi mila" }, { status: 404 });
+    await writeAuditLog({ action: "UNLOCK", entityType: "PermissionBatch", entityId: String(batch._id), performedBy: auth.session?.username || "admin", summary: `${month} permissions unlocked`, metadata: { reason } });
+    return NextResponse.json({ success: true, message: "Permissions editing/correction ke liye unlock ho gayi", batch });
+  } catch (error) {
+    return NextResponse.json({ success: false, message: error instanceof Error ? error.message : "Permission unlock nahi ho payi" }, { status: 500 });
   }
 }

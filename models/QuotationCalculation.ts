@@ -117,11 +117,20 @@ const quotationCalculationSchema = new Schema(
       max: 2,
       default: 0,
     },
+    acceptedReason: { type: String, trim: true, default: "Approved quotation" },
+    status: { type: String, enum: ["ACTIVE", "VOID"], default: "ACTIVE", index: true },
+    createdBy: { type: String, trim: true, default: "admin" },
+    updatedBy: { type: String, trim: true },
+    voidedAt: { type: Date, default: null },
+    voidedBy: { type: String, trim: true },
+    voidReason: { type: String, trim: true },
   },
   {
     timestamps: true,
   }
 );
+
+quotationCalculationSchema.index({ month: 1, createdAt: -1 });
 
 const QuotationCalculation =
   models.QuotationCalculation ||

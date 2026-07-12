@@ -1,310 +1,220 @@
 import mongoose from "mongoose";
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { connectDB } from "@/lib/mongodb";
+import { requireApiAuth } from "@/lib/api-auth";
+import { currentMonthInIndia, isDateInCurrentIndiaMonth, monthBoundsUtc, monthFromDateIndia, parseDateOnly, todayInIndia } from "@/lib/date-utils";
+import { positiveNumber } from "@/lib/number-utils";
+import { nextDocumentNumber } from "@/lib/sequence";
+import { changeStockBalance, ensureStockBalances } from "@/lib/stock";
+import { writeAuditLog } from "@/lib/audit";
 import Branch from "@/models/Branch";
 import StationeryItem from "@/models/StationeryItem";
 import OutEntry from "@/models/OutEntry";
 import StockTransaction from "@/models/StockTransaction";
+import PermissionBatch from "@/models/PermissionBatch";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-type OutRequestItem = {
-  itemId: string;
-  quantity: number;
-};
-
-type LeanBranch = {
+type OutRequestItem = { itemId: string; quantity: number };
+type LeanBranch = { _id: mongoose.Types.ObjectId; name: string; code: string };
+type LeanItem = { _id: mongoose.Types.ObjectId; name: string; unit: string };
+type LeanOutEntry = {
   _id: mongoose.Types.ObjectId;
-  name: string;
+  issueNo?: string;
+  branch: mongoose.Types.ObjectId;
+  issueDate: Date;
+  status?: string;
+  items: Array<{ item: mongoose.Types.ObjectId; itemName: string; quantity: number; unit: string }>;
 };
 
-type LeanStationeryItem = {
-  _id: mongoose.Types.ObjectId;
-  name: string;
-  unit: string;
-};
-
-type StockAggregateRow = {
-  _id: mongoose.Types.ObjectId;
-  totalIn?: number;
-  totalOut?: number;
-};
-
-function parseLocalDate(dateString: string) {
-  return new Date(`${dateString}T00:00:00`);
-}
-
-function isDateInCurrentMonth(dateString: string) {
-  const selectedDate = parseLocalDate(dateString);
-  const today = new Date();
-
-  return (
-    selectedDate.getFullYear() === today.getFullYear() &&
-    selectedDate.getMonth() === today.getMonth()
-  );
-}
-
-export async function POST(request: Request) {
-  let session: mongoose.ClientSession | null = null;
+export async function GET(request: NextRequest) {
+  const auth = requireApiAuth(request);
+  if (auth.response) return auth.response;
 
   try {
     await connectDB();
+    const params = request.nextUrl.searchParams;
+    const page = Math.max(Number(params.get("page")) || 1, 1);
+    const limit = Math.min(Math.max(Number(params.get("limit")) || 25, 1), 100);
+    const status = params.get("status") || "ALL";
+    const branchId = params.get("branchId");
+    const month = params.get("month");
+    const search = String(params.get("search") || "").trim();
+    const filter: Record<string, unknown> = {};
 
+    if (status !== "ALL") filter.status = status;
+    if (branchId && mongoose.isValidObjectId(branchId)) filter.branch = new mongoose.Types.ObjectId(branchId);
+    if (month) {
+      const { start, end } = monthBoundsUtc(month);
+      filter.issueDate = { $gte: start, $lt: end };
+    }
+    if (search) {
+      const escaped = search.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      filter.$or = [
+        { issueNo: { $regex: escaped, $options: "i" } },
+        { branchName: { $regex: escaped, $options: "i" } },
+        { receiverName: { $regex: escaped, $options: "i" } },
+      ];
+    }
+
+    const [entries, total] = await Promise.all([
+      OutEntry.find(filter).sort({ issueDate: -1, createdAt: -1 }).skip((page - 1) * limit).limit(limit).lean(),
+      OutEntry.countDocuments(filter),
+    ]);
+    return NextResponse.json({ success: true, entries, pagination: { page, limit, total, pages: Math.max(Math.ceil(total / limit), 1) } });
+  } catch (error) {
+    return NextResponse.json({ success: false, message: error instanceof Error ? error.message : "Out entry register load nahi ho paya" }, { status: 500 });
+  }
+}
+
+export async function POST(request: NextRequest) {
+  const auth = requireApiAuth(request);
+  if (auth.response || !auth.session) return auth.response;
+
+  let session: mongoose.ClientSession | null = null;
+  try {
+    await connectDB();
     const body = await request.json();
-
-    const branchId = body.branchId;
-    const issueDate = body.issueDate;
-    const receiverName = body.receiverName || "";
-    const remarks = body.remarks || "";
+    const branchId = String(body.branchId || "");
+    const issueDateText = String(body.issueDate || "");
+    const receiverName = String(body.receiverName || "").trim();
+    const remarks = String(body.remarks || "").trim();
     const items = body.items as OutRequestItem[];
 
-    if (!branchId) {
-      return NextResponse.json(
-        {
-          success: false,
-          message: "PS/Branch required hai",
-        },
-        { status: 400 }
-      );
+    if (!mongoose.isValidObjectId(branchId)) throw new Error("Valid PS/Branch required hai");
+    if (!issueDateText) throw new Error("Out date required hai");
+    if (issueDateText > todayInIndia()) throw new Error("Future out date allowed nahi hai");
+    if (!isDateInCurrentIndiaMonth(issueDateText)) throw new Error(`Stationery Out Entry sirf present month (${currentMonthInIndia()}) me allowed hai`);
+    if (!Array.isArray(items) || items.length === 0) throw new Error("Kam se kam ek item required hai");
+
+    const branch = (await Branch.findOne({ _id: branchId, isActive: true }).lean()) as LeanBranch | null;
+    if (!branch) throw new Error("Selected PS/Branch invalid ya inactive hai");
+
+    const combined = new Map<string, number>();
+    for (const row of items) {
+      if (!mongoose.isValidObjectId(row.itemId)) throw new Error("Har row me valid stationery item select karein");
+      const quantity = positiveNumber(row.quantity, "Quantity");
+      combined.set(row.itemId, (combined.get(row.itemId) || 0) + quantity);
     }
 
-    if (!issueDate) {
-      return NextResponse.json(
-        {
-          success: false,
-          message: "Out date required hai",
-        },
-        { status: 400 }
-      );
-    }
-
-    if (!isDateInCurrentMonth(issueDate)) {
-      return NextResponse.json(
-        {
-          success: false,
-          message: "Stationery Out Entry sirf present month me allowed hai",
-        },
-        { status: 400 }
-      );
-    }
-
-    if (!Array.isArray(items) || items.length === 0) {
-      return NextResponse.json(
-        {
-          success: false,
-          message: "Kam se kam ek item required hai",
-        },
-        { status: 400 }
-      );
-    }
-
-    for (const item of items) {
-      if (!item.itemId) {
-        return NextResponse.json(
-          {
-            success: false,
-            message: "Har row me stationery item select karo",
-          },
-          { status: 400 }
-        );
-      }
-
-      if (!item.quantity || Number(item.quantity) <= 0) {
-        return NextResponse.json(
-          {
-            success: false,
-            message: "Quantity 0 se jyada honi chahiye",
-          },
-          { status: 400 }
-        );
-      }
-    }
-
-    const branch = (await Branch.findOne({
-      _id: branchId,
-      isActive: true,
-    }).lean()) as LeanBranch | null;
-
-    if (!branch) {
-      return NextResponse.json(
-        {
-          success: false,
-          message: "Invalid PS/Branch selected",
-        },
-        { status: 400 }
-      );
-    }
-
-    const combinedItemsMap = new Map<string, number>();
-
-    for (const item of items) {
-      const currentQuantity = combinedItemsMap.get(item.itemId) || 0;
-      combinedItemsMap.set(item.itemId, currentQuantity + Number(item.quantity));
-    }
-
-    const combinedItems = Array.from(combinedItemsMap.entries()).map(
-      ([itemId, quantity]) => ({
-        itemId,
-        quantity,
-      })
-    );
-
-    const itemIds = combinedItems.map((item) => item.itemId);
-
-    const dbItems = (await StationeryItem.find({
-      _id: { $in: itemIds },
-      isActive: true,
-    }).lean()) as LeanStationeryItem[];
-
-    if (dbItems.length !== itemIds.length) {
-      return NextResponse.json(
-        {
-          success: false,
-          message: "One or more stationery items invalid hain",
-        },
-        { status: 400 }
-      );
-    }
-
-    const itemMap = new Map(
-      dbItems.map((item) => [String(item._id), item])
-    );
-
-    const objectItemIds = itemIds.map(
-      (itemId) => new mongoose.Types.ObjectId(itemId)
-    );
-
-    const stockData = await StockTransaction.aggregate<StockAggregateRow>([
-      {
-        $match: {
-          item: { $in: objectItemIds },
-        },
-      },
-      {
-        $group: {
-          _id: "$item",
-          totalIn: { $sum: "$quantityIn" },
-          totalOut: { $sum: "$quantityOut" },
-        },
-      },
-    ]);
-
-    const stockMap = new Map(
-      stockData.map((stock) => [
-        String(stock._id),
-        {
-          totalIn: stock.totalIn || 0,
-          totalOut: stock.totalOut || 0,
-          available: (stock.totalIn || 0) - (stock.totalOut || 0),
-        },
-      ])
-    );
-
-    for (const item of combinedItems) {
-      const dbItem = itemMap.get(item.itemId);
-
-      if (!dbItem) {
-        throw new Error("Invalid stationery item");
-      }
-      const stock = stockMap.get(item.itemId) || {
-        totalIn: 0,
-        totalOut: 0,
-        available: 0,
-      };
-
-      if (item.quantity > stock.available) {
-        return NextResponse.json(
-          {
-            success: false,
-            message: `${dbItem.name} ka available stock ${stock.available} ${dbItem.unit} hai. Aap ${item.quantity} issue nahi kar sakte.`,
-          },
-          { status: 400 }
-        );
-      }
-    }
-
-    const outItems = combinedItems.map((item) => {
-      const dbItem = itemMap.get(item.itemId);
-
-      if (!dbItem) {
-        throw new Error("Invalid stationery item");
-      }
-
-      return {
-        item: item.itemId,
-        itemName: dbItem.name,
-        quantity: item.quantity,
-        unit: dbItem.unit,
-      };
+    const itemIds = [...combined.keys()].map((id) => new mongoose.Types.ObjectId(id));
+    const dbItems = (await StationeryItem.find({ _id: { $in: itemIds }, isActive: true }).lean()) as LeanItem[];
+    if (dbItems.length !== itemIds.length) throw new Error("One or more stationery items invalid/inactive hain");
+    const itemMap = new Map(dbItems.map((item) => [String(item._id), item]));
+    const outItems = [...combined.entries()].map(([id, quantity]) => {
+      const item = itemMap.get(id);
+      if (!item) throw new Error("Invalid stationery item");
+      return { item: item._id, itemName: item.name, quantity, unit: item.unit };
     });
 
-    const totalQuantity = outItems.reduce((sum, item) => {
-      return sum + item.quantity;
-    }, 0);
-
+    await ensureStockBalances(itemIds);
     session = await mongoose.startSession();
     session.startTransaction();
 
-    const createdOutEntries = await OutEntry.create(
-      [
-        {
-          branch: branchId,
-          branchName: branch.name,
-          issueDate: parseLocalDate(issueDate),
-          receiverName: String(receiverName).trim(),
-          items: outItems,
-          totalQuantity,
-          remarks: String(remarks).trim(),
-        },
-      ],
-      { session }
-    );
+    for (const item of outItems) {
+      const updated = await changeStockBalance({ itemId: item.item, itemName: item.itemName, unit: item.unit, delta: -item.quantity, session });
+      if (!updated) throw new Error(`${item.itemName} ka available stock requested quantity se kam hai`);
+    }
 
-    const outEntry = createdOutEntries[0];
+    const issueDate = parseDateOnly(issueDateText);
+    const issueNo = await nextDocumentNumber("OUT", issueDate, session);
+    const [outEntry] = await OutEntry.create([{
+      issueNo,
+      branch: branch._id,
+      branchName: branch.name,
+      branchCode: branch.code,
+      issueDate,
+      receiverName,
+      items: outItems,
+      totalQuantity: outItems.reduce((sum, item) => sum + item.quantity, 0),
+      remarks,
+      status: "ACTIVE",
+      createdBy: auth.session.username,
+    }], { session });
 
-    const stockTransactions = outItems.map((item) => ({
+    await StockTransaction.insertMany(outItems.map((item) => ({
       item: item.item,
       itemName: item.itemName,
       unit: item.unit,
       transactionType: "BRANCH_OUT",
       quantityIn: 0,
       quantityOut: item.quantity,
-      transactionDate: parseLocalDate(issueDate),
-      branch: branchId,
+      transactionDate: issueDate,
+      branch: branch._id,
       branchName: branch.name,
       referenceModel: "OutEntry",
       referenceId: outEntry._id,
-      remarks: String(remarks).trim(),
-    }));
-
-    await StockTransaction.insertMany(stockTransactions, { session });
+      remarks,
+      createdBy: auth.session.username,
+    })), { session });
 
     await session.commitTransaction();
-
-    return NextResponse.json({
-      success: true,
-      message: "Stationery out entry saved successfully",
-      outEntry,
-    });
+    await writeAuditLog({ action: "CREATE", entityType: "OutEntry", entityId: String(outEntry._id), performedBy: auth.session.username, summary: `${issueNo} - ${branch.name}`, metadata: { receiverName, itemCount: outItems.length } });
+    return NextResponse.json({ success: true, message: `Stationery out entry ${issueNo} saved successfully`, outEntry }, { status: 201 });
   } catch (error) {
-    if (session) {
-      await session.abortTransaction();
+    if (session?.inTransaction()) await session.abortTransaction();
+    return NextResponse.json({ success: false, message: error instanceof Error ? error.message : "Stationery out entry save nahi ho payi" }, { status: 400 });
+  } finally {
+    await session?.endSession();
+  }
+}
+
+export async function PATCH(request: NextRequest) {
+  const auth = requireApiAuth(request);
+  if (auth.response || !auth.session) return auth.response;
+
+  let session: mongoose.ClientSession | null = null;
+  try {
+    await connectDB();
+    const body = await request.json();
+    const id = String(body.id || "");
+    const reason = String(body.reason || "").trim();
+    if (body.action !== "void") throw new Error("Unsupported action");
+    if (!mongoose.isValidObjectId(id)) throw new Error("Invalid out entry");
+    if (reason.length < 5) throw new Error("Cancellation reason kam se kam 5 characters ka hona chahiye");
+
+    const entry = (await OutEntry.findById(id).lean()) as LeanOutEntry | null;
+    if (!entry) throw new Error("Out entry not found");
+    if (entry.status === "VOID") throw new Error("Out entry already cancelled hai");
+
+    const month = monthFromDateIndia(entry.issueDate);
+    const lockedPermission = await PermissionBatch.findOne({
+      month,
+      finalizedAt: { $ne: null },
+      documents: { $elemMatch: { branch: entry.branch, sourceType: "OUT_RECORD" } },
+    }).lean();
+    if (lockedPermission) throw new Error("Is month ki permission finalized hai. Permission unlock/correct karne ke baad entry cancel karein.");
+
+    const itemIds = entry.items.map((item) => new mongoose.Types.ObjectId(String(item.item)));
+    await ensureStockBalances(itemIds);
+    session = await mongoose.startSession();
+    session.startTransaction();
+
+    for (const item of entry.items) {
+      await changeStockBalance({
+        itemId: new mongoose.Types.ObjectId(String(item.item)),
+        itemName: item.itemName,
+        unit: item.unit,
+        delta: Number(item.quantity),
+        session,
+      });
     }
 
-    return NextResponse.json(
-      {
-        success: false,
-        message:
-          error instanceof Error
-            ? error.message
-            : "Stationery out entry save nahi ho payi",
-      },
-      { status: 500 }
-    );
+    await OutEntry.updateOne({ _id: id, status: { $ne: "VOID" } }, {
+      $set: { status: "VOID", voidedAt: new Date(), voidedBy: auth.session.username, voidReason: reason },
+    }, { session });
+    await StockTransaction.updateMany({ referenceModel: "OutEntry", referenceId: entry._id }, {
+      $set: { isVoided: true, voidedAt: new Date() },
+    }, { session });
+    await session.commitTransaction();
+
+    await writeAuditLog({ action: "VOID", entityType: "OutEntry", entityId: id, performedBy: auth.session.username, summary: `${entry.issueNo || id} cancelled`, metadata: { reason } });
+    return NextResponse.json({ success: true, message: "Out entry cancelled and stock restored successfully" });
+  } catch (error) {
+    if (session?.inTransaction()) await session.abortTransaction();
+    return NextResponse.json({ success: false, message: error instanceof Error ? error.message : "Out entry cancel nahi ho payi" }, { status: 400 });
   } finally {
-    if (session) {
-      session.endSession();
-    }
+    await session?.endSession();
   }
 }

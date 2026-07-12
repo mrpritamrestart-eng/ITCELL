@@ -27,6 +27,8 @@ export default function AdminOpeningStockPage() {
 
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
+  const [isLocked, setIsLocked] = useState(false);
+  const [lockReason, setLockReason] = useState("");
 
   const [successMessage, setSuccessMessage] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
@@ -44,6 +46,8 @@ export default function AdminOpeningStockPage() {
       }
 
       setItems(data.items || []);
+      setIsLocked(Boolean(data.locked));
+      setLockReason(String(data.lockReason || ""));
     } catch (error) {
       setErrorMessage(
         error instanceof Error
@@ -89,6 +93,10 @@ export default function AdminOpeningStockPage() {
   }, 0);
 
   const saveOpeningStock = async () => {
+    if (isLocked) {
+      setErrorMessage(lockReason || "Opening Stock locked hai. Stock Adjustment use karein.");
+      return;
+    }
     const confirmed = window.confirm(
       "Opening stock save karna hai? Agar pehle se opening stock saved hai to wahi update ho jayega, duplicate entry nahi banegi."
     );
@@ -170,6 +178,12 @@ export default function AdminOpeningStockPage() {
           </div>
         </div>
 
+        {isLocked && (
+          <div className="mb-6 rounded-2xl border border-orange-300 bg-orange-50 px-5 py-4 text-sm font-bold text-orange-900">
+            Opening Stock Locked: {lockReason} <Link href="/stationery-bills/stock-adjustment" className="underline">Open Stock Adjustment</Link>
+          </div>
+        )}
+
         {successMessage && (
           <div className="mb-6 rounded-2xl border border-green-200 bg-green-50 px-5 py-4 text-sm font-bold text-green-800">
             {successMessage}
@@ -240,7 +254,7 @@ export default function AdminOpeningStockPage() {
             <button
               type="button"
               onClick={saveOpeningStock}
-              disabled={isLoading || isSaving}
+              disabled={isLoading || isSaving || isLocked}
               className="rounded-xl bg-green-600 px-6 py-3 font-bold text-white shadow-sm hover:bg-green-700 disabled:cursor-not-allowed disabled:bg-gray-300"
             >
               {isSaving ? "Saving..." : "Save Opening Stock"}
@@ -304,6 +318,7 @@ export default function AdminOpeningStockPage() {
                         <input
                           type="number"
                           min="0"
+                          disabled={isLocked}
                           value={item.quantity}
                           onChange={(event) =>
                             updateQuantity(item.itemId, event.target.value)

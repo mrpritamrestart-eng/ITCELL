@@ -2,7 +2,8 @@
 
 :root {
   --background: #ffffff;
-  --foreground: #171717;
+  --foreground: #111827;
+  color-scheme: light;
 }
 
 @theme inline {
@@ -12,15 +13,54 @@
   --font-mono: "Courier New", monospace;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+html {
+  color-scheme: light;
+  background: #ffffff;
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
+}
+
+/*
+  This is an internal light-theme office application. Earlier, the browser/OS
+  dark-mode preference changed the inherited foreground to a very pale colour
+  while many pages intentionally kept a light background. That made headings,
+  tables, dropdown options and audit-log rows look blurred or almost invisible.
+  Keep native controls and inherited text in a readable light colour scheme.
+*/
+input,
+select,
+textarea {
+  color: #111827;
+  background-color: #ffffff;
+}
+
+select option {
+  color: #111827;
+  background-color: #ffffff;
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: #6b7280;
+  opacity: 1;
+}
+
+input:disabled,
+select:disabled,
+textarea:disabled {
+  color: #4b5563;
+  -webkit-text-fill-color: #4b5563;
+  opacity: 1;
+}
+
+@media print {
+  html,
+  body {
+    background: #ffffff !important;
+    color: #111827 !important;
+  }
 }

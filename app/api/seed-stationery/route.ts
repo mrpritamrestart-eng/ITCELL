@@ -1,4 +1,5 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
+import { requireApiAuth } from "@/lib/api-auth";
 import { connectDB } from "@/lib/mongodb";
 import Branch from "@/models/Branch";
 import StationeryItem from "@/models/StationeryItem";
@@ -48,8 +49,17 @@ const stationeryItems = [
   { name: "White Sheet", unit: "Bundle", minimumRequired: 20 },
 ];
 
-export async function GET() {
+export async function POST(request: NextRequest) {
+  const auth = requireApiAuth(request);
+  if (auth.response) return auth.response;
   try {
+    if (process.env.SEED_STATIONERY_ENABLED !== "true") {
+      return NextResponse.json({ success: false, message: "Seed route disabled hai. Zarurat par SEED_STATIONERY_ENABLED=true set karein." }, { status: 403 });
+    }
+    const body = await request.json();
+    if (body.confirm !== "SEED") {
+      return NextResponse.json({ success: false, message: "Confirmation text SEED required hai" }, { status: 400 });
+    }
     await connectDB();
 
     const branchOperations = branches.map((branch) => ({
