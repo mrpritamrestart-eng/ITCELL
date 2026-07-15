@@ -21,7 +21,7 @@ export async function GET(request: NextRequest) {
   try {
     await connectDB();
     const includeInactive = request.nextUrl.searchParams.get("includeInactive") === "true";
-    const items = await StationeryItem.find(includeInactive ? {} : { isActive: true }).sort({ isActive: -1, name: 1 }).lean();
+    const items = await StationeryItem.find(includeInactive ? {} : { isActive: true }).sort({ isActive: -1, sortOrder: 1, name: 1 }).lean();
     return NextResponse.json({ success: true, items });
   } catch (error) {
     return NextResponse.json({ success: false, message: error instanceof Error ? error.message : "Stationery items load nahi ho paye" }, { status: 500 });
@@ -52,7 +52,9 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: true, message: "Stationery item restore ho gaya", item: existing });
     }
 
-    const item = await StationeryItem.create({ name, unit, minimumRequired, isActive: true });
+    const lastItem = await StationeryItem.findOne({ isActive: true }).sort({ sortOrder: -1 }).select("sortOrder").lean();
+    const sortOrder = Number(lastItem?.sortOrder || 0) + 10;
+    const item = await StationeryItem.create({ name, unit, minimumRequired, sortOrder, isActive: true });
     await writeAuditLog({ action: "CREATE", entityType: "StationeryItem", entityId: String(item._id), performedBy: auth.session.username, summary: `${name} (${unit}) created` });
     return NextResponse.json({ success: true, message: "Stationery item successfully add ho gaya", item }, { status: 201 });
   } catch (error) {

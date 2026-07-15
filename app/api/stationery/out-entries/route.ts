@@ -40,12 +40,23 @@ export async function GET(request: NextRequest) {
     const status = params.get("status") || "ALL";
     const branchId = params.get("branchId");
     const month = params.get("month");
+    const from = params.get("from");
+    const to = params.get("to");
     const search = String(params.get("search") || "").trim();
     const filter: Record<string, unknown> = {};
 
     if (status !== "ALL") filter.status = status;
     if (branchId && mongoose.isValidObjectId(branchId)) filter.branch = new mongoose.Types.ObjectId(branchId);
-    if (month) {
+    if (from || to) {
+      const dateFilter: Record<string, Date> = {};
+      if (from) dateFilter.$gte = parseDateOnly(from);
+      if (to) {
+        const exclusiveEnd = parseDateOnly(to);
+        exclusiveEnd.setUTCDate(exclusiveEnd.getUTCDate() + 1);
+        dateFilter.$lt = exclusiveEnd;
+      }
+      filter.issueDate = dateFilter;
+    } else if (month) {
       const { start, end } = monthBoundsUtc(month);
       filter.issueDate = { $gte: start, $lt: end };
     }

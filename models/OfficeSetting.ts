@@ -15,6 +15,8 @@ const officeSettingSchema = new Schema(
     memberOneLabel: { type: String, trim: true, default: "Member" },
     memberTwoLabel: { type: String, trim: true, default: "Member" },
     stockRegisterPage: { type: String, trim: true, default: "" },
+    branchTileColumns: { type: Number, min: 3, max: 10, default: 6 },
+    itemTileColumns: { type: Number, min: 3, max: 10, default: 6 },
   },
   { timestamps: true }
 );

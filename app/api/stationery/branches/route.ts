@@ -24,7 +24,7 @@ export async function GET(request: NextRequest) {
   try {
     await connectDB();
     const includeInactive = request.nextUrl.searchParams.get("includeInactive") === "true";
-    const branches = await Branch.find(includeInactive ? {} : { isActive: true }).sort({ isActive: -1, name: 1 }).lean();
+    const branches = await Branch.find(includeInactive ? {} : { isActive: true }).sort({ isActive: -1, sortOrder: 1, name: 1 }).lean();
     return NextResponse.json({ success: true, branches });
   } catch (error) {
     return NextResponse.json({ success: false, message: error instanceof Error ? error.message : "Branches load nahi ho payi" }, { status: 500 });
@@ -55,7 +55,9 @@ export async function POST(request: NextRequest) {
     if (sameName) throw new Error("Ye PS/Branch name already exist karta hai");
     if (sameCode) throw new Error("Ye Branch Code already exist karta hai");
 
-    const branch = await Branch.create({ name, code, isActive: true });
+    const lastBranch = await Branch.findOne({ isActive: true }).sort({ sortOrder: -1 }).select("sortOrder").lean();
+    const sortOrder = Number(lastBranch?.sortOrder || 0) + 10;
+    const branch = await Branch.create({ name, code, sortOrder, isActive: true });
     await writeAuditLog({ action: "CREATE", entityType: "Branch", entityId: String(branch._id), performedBy: auth.session.username, summary: `${name} (${code}) created` });
     return NextResponse.json({ success: true, message: "PS/Branch successfully add ho gayi", branch }, { status: 201 });
   } catch (error) {

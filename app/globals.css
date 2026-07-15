@@ -64,3 +64,22 @@ textarea:disabled {
     color: #111827 !important;
   }
 }
+
+/* Compact, responsive tile layout used by stationery selection popups. */
+.selector-tile-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.55rem;
+}
+
+@media (min-width: 640px) {
+  .selector-tile-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 1024px) {
+  .selector-tile-grid {
+    grid-template-columns: repeat(var(--selector-tile-columns, 6), minmax(0, 1fr));
+  }
+}

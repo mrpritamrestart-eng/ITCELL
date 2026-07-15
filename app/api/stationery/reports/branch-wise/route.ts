@@ -20,16 +20,16 @@ export async function GET(request: NextRequest) {
     const { start, end } = monthBoundsUtc(month);
 
     const [activeBranches, monthEntries] = await Promise.all([
-      Branch.find({ isActive: true }).sort({ name: 1 }).lean(),
+      Branch.find({ isActive: true }).sort({ sortOrder: 1, name: 1 }).lean(),
       OutEntry.find({ issueDate: { $gte: start, $lt: end }, status: { $ne: "VOID" } }).lean(),
     ]);
-    const branchMap = new Map<string, { _id: string; name: string; code: string }>();
-    activeBranches.forEach((branch) => branchMap.set(String(branch._id), { _id: String(branch._id), name: branch.name, code: branch.code || "" }));
+    const branchMap = new Map<string, { _id: string; name: string; code: string; sortOrder: number }>();
+    activeBranches.forEach((branch) => branchMap.set(String(branch._id), { _id: String(branch._id), name: branch.name, code: branch.code || "", sortOrder: Number(branch.sortOrder || 0) }));
     monthEntries.forEach((entry) => {
       const id = String(entry.branch);
-      if (!branchMap.has(id)) branchMap.set(id, { _id: id, name: entry.branchName, code: entry.branchCode || "" });
+      if (!branchMap.has(id)) branchMap.set(id, { _id: id, name: entry.branchName, code: entry.branchCode || "", sortOrder: 999999 });
     });
-    const branches = [...branchMap.values()].sort((a, b) => a.name.localeCompare(b.name));
+    const branches = [...branchMap.values()].sort((a, b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name));
     const reportEnd = new Date(end.getTime() - 1);
 
     if (!branchIds.length) {

@@ -3,6 +3,7 @@ import Link from "next/link";
 const modules = [
   { title: "PS/Branches", description: "Branch name, code, active/inactive status manage karein.", href: "/admin/stationery/branches", icon: "🏢" },
   { title: "Stationery Items", description: "Item name, unit aur minimum stock manage karein.", href: "/admin/stationery/items", icon: "📦" },
+  { title: "Popup Selection Settings", description: "Branch/item tile order aur desktop tiles-per-row control karein.", href: "/admin/selector-settings", icon: "▦" },
   { title: "Opening Stock", description: "Only first-time opening stock setup; operational entries ke baad auto-lock.", href: "/admin/stationery/opening-stock", icon: "📥" },
   { title: "Activity / Audit Log", description: "Important create, update, cancellation aur correction history.", href: "/admin/audit-log", icon: "🧾" },
   { title: "Data Maintenance", description: "One-time migration, legacy numbering aur stock balance rebuild.", href: "/admin/data-maintenance", icon: "🛠️" },
