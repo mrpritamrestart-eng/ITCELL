@@ -485,12 +485,15 @@ export default function BillCalculationsPage() {
         }
       }
 
+      /*
+       * Map insertion order preserve karta hai.
+       *
+       * Permission page par items jis order me saved hain,
+       * Bill Calculations page par bhi wahi order rahega.
+       * Ye existing saved bills aur new bills dono par apply hoga.
+       */
       return Array.from(
         combined.values()
-      ).sort((a, b) =>
-        a.itemName.localeCompare(
-          b.itemName
-        )
       );
     }, [selectedPermissions]);
 
